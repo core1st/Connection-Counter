@@ -5,10 +5,9 @@ import altair as alt
 # 페이지 기본 설정
 st.set_page_config(page_title="항공편 연결 분석기 v22", layout="wide")
 
-st.title("✈️ 항공사 간 연결편(Interline) 분석 앱")
+st.title(" 여객 노선부 연결편 분석 앱 VER.1 ")
 st.markdown("""
-**원하는 노선(Route)**을 선택하여 상호 간의 환승 연결성을 분석합니다.  
-결과 요약 탭에서 **운항사 및 노선별 상세 연결 건수**를 확인할 수 있습니다.
+
 """)
 
 # --- [NOTICE] 데이터 작성 가이드 ---
@@ -26,7 +25,7 @@ with st.expander("📢 [필독] 데이터 파일(CSV) 작성 양식 가이드", 
     """)
     
     example_data = pd.DataFrame({
-        'SEASON': ['S26'], 'FLT NO': ['081'],
+        'SEASON': ['S26'], 'FLT NO': ['81'],
         'ORGN': ['JFK'], 'DEST': ['ICN'],
         'STD': ['12:00'], 'STA': ['16:30'],
         'OPS': ['KE'], '구분': ['To ICN'],
@@ -117,6 +116,9 @@ def analyze_connections_flexible(df, min_limit, max_limit,
                     'Outbound_Flight': f"[{flt_out}] {row['ORGN_OUT']}->{row['DEST_OUT']} (Dep {row['STD_OUT']})",
                     'Hub_Arr_Time': row['STA_IN'], 'Hub_Dep_Time': row['STD_OUT'],
                     'Arr_Min': arr, 'Dep_Min': dep,
+                    # [NEW] 시간 단위(Decimal Hour) 추가 (예: 14:30 -> 14.5)
+                    'Arr_Hour': arr / 60.0, 
+                    'Dep_Hour': dep / 60.0,
                     'Conn_Min': diff, 'Status': status
                 })
         return local_results
@@ -127,7 +129,7 @@ def analyze_connections_flexible(df, min_limit, max_limit,
     if not is_same_group:
         results.extend(analyze_one_direction(group_b_routes, group_b_ops, group_a_routes, group_a_ops, "Group B -> Group A"))
 
-    cols = ['Direction', 'Inbound_Route', 'Inbound_OPS', 'Outbound_Route', 'Outbound_OPS', 'Inbound_Flt_No', 'Outbound_Flt_No', 'From', 'Via', 'To', 'Inbound_Flight', 'Outbound_Flight', 'Hub_Arr_Time', 'Hub_Dep_Time', 'Arr_Min', 'Dep_Min', 'Conn_Min', 'Status']
+    cols = ['Direction', 'Inbound_Route', 'Outbound_Route', 'Inbound_OPS', 'Outbound_OPS', 'Inbound_Flt_No', 'Outbound_Flt_No', 'From', 'Via', 'To', 'Inbound_Flight', 'Outbound_Flight', 'Hub_Arr_Time', 'Hub_Dep_Time', 'Arr_Min', 'Dep_Min', 'Arr_Hour', 'Dep_Hour', 'Conn_Min', 'Status']
     if not results: return pd.DataFrame(columns=cols)
     return pd.DataFrame(results)[cols]
 
@@ -187,31 +189,15 @@ if uploaded_file is not None:
                 
                 with tab1:
                     st.info(f"💡 **분석 기준**: [{g_name_a}] ↔ [{g_name_b}]")
-                    
-                    st.markdown("##### 1. 전체 연결 건수 요약")
                     col1, col2 = st.columns(2)
                     with col1:
+                        st.markdown("##### 방향별 연결 건수")
                         st.dataframe(result_df.groupby(['Direction', 'Status']).size().unstack(fill_value=0), use_container_width=True)
                     with col2:
+                        st.markdown("##### 평균 연결 시간 (분)")
                         connected = result_df[result_df['Status']=='Connected']
                         if not connected.empty:
-                             avg_conn = connected.groupby('Direction')['Conn_Min'].mean().round(1).to_frame(name='Average CT (min)')
-                             st.dataframe(avg_conn, use_container_width=True)
-
-                    st.markdown("---")
-                    st.markdown("##### 2. 🔍 상세 운항사/노선별 연결 건수")
-                    st.markdown("Inbound(도착) 및 Outbound(출발)의 노선과 운항사를 기준으로 데이터를 세분화하여 보여줍니다.")
-                    
-                    # [NEW] 세분화된 그룹핑 로직
-                    detailed_group = result_df.groupby([
-                        'Direction',
-                        'Inbound_Route', 'Inbound_OPS',
-                        'Outbound_Route', 'Outbound_OPS',
-                        'Status'
-                    ]).size().unstack(fill_value=0)
-                    
-                    st.dataframe(detailed_group, use_container_width=True)
-
+                            st.dataframe(connected.groupby('Direction')['Conn_Min'].mean().round(1), use_container_width=True)
 
                 with tab2:
                     st.markdown("#### 상세 연결 리스트")
@@ -250,27 +236,29 @@ if uploaded_file is not None:
                             if out_df.empty:
                                 st.info("연결편 없음")
                             else:
-                                chart_out = alt.Chart(out_df).mark_circle(size=120).encode(
+                                # Chart 1-1: 목적지별
+                                base_chart = alt.Chart(out_df).mark_circle(size=120).encode(
                                     x=alt.X('To', title='도착지 (그룹 B)'),
                                     y=alt.Y('Conn_Min', title='연결 시간(분)'),
                                     color=alt.Color('Inbound_Flt_No', title='ICN 도착편명', legend=alt.Legend(orient='bottom')),
-                                    tooltip=[
-                                        alt.Tooltip('To', title='도착지'),
-                                        alt.Tooltip('Conn_Min', title='연결시간(분)'),
-                                        alt.Tooltip('Inbound_Flt_No', title='ICN 도착편명'),
-                                        alt.Tooltip('Outbound_Flt_No', title='ICN 출발편명'),
-                                        alt.Tooltip('Hub_Arr_Time', title='ICN 도착시간'),
-                                        alt.Tooltip('Hub_Dep_Time', title='ICN 출발시간')
-                                    ]
+                                    tooltip=['To', 'Conn_Min', 'Inbound_Flt_No', 'Outbound_Flt_No', 'Hub_Arr_Time', 'Hub_Dep_Time']
                                 ).properties(height=350, title="목적지별 연결 시간 분포").interactive()
-                                st.altair_chart(chart_out, use_container_width=True)
+                                st.altair_chart(base_chart, use_container_width=True)
                                 
+                                # Chart 1-2: Hub Time (Hour Scale)
                                 st.markdown("##### ⏱️ Hub 출/도착 시간 분포 (24h)")
                                 time_chart = alt.Chart(out_df).mark_circle(size=100).encode(
-                                    x=alt.X('Arr_Min', title='ICN 도착 시간 (분)', scale=alt.Scale(domain=[0, 1440])),
-                                    y=alt.Y('Dep_Min', title='ICN 출발 시간 (분)', scale=alt.Scale(domain=[0, 1440])),
+                                    x=alt.X('Arr_Hour', title='ICN 도착 시간 (시)', scale=alt.Scale(domain=[0, 24], nice=False)),
+                                    y=alt.Y('Dep_Hour', title='ICN 출발 시간 (시)', scale=alt.Scale(domain=[0, 24], nice=False)),
                                     color=alt.Color('Inbound_Flt_No', legend=None),
-                                    tooltip=['To', 'Inbound_Flt_No', 'Hub_Arr_Time', 'Outbound_Flt_No', 'Hub_Dep_Time', 'Conn_Min']
+                                    tooltip=[
+                                        alt.Tooltip('To', title='도착지'),
+                                        alt.Tooltip('Inbound_Flt_No', title='ICN 도착편명'),
+                                        alt.Tooltip('Hub_Arr_Time', title='ICN 도착시간'),
+                                        alt.Tooltip('Outbound_Flt_No', title='ICN 출발편명'),
+                                        alt.Tooltip('Hub_Dep_Time', title='ICN 출발시간'),
+                                        alt.Tooltip('Conn_Min', title='연결시간(분)')
+                                    ]
                                 ).properties(height=350).interactive()
                                 st.altair_chart(time_chart, use_container_width=True)
 
@@ -284,27 +272,29 @@ if uploaded_file is not None:
                             if in_df.empty:
                                 st.info("연결편 없음")
                             else:
-                                chart_in = alt.Chart(in_df).mark_circle(size=120).encode(
+                                # Chart 2-1: 출발지별
+                                base_chart = alt.Chart(in_df).mark_circle(size=120).encode(
                                     x=alt.X('From', title='출발지 (그룹 B)'),
                                     y=alt.Y('Conn_Min', title='연결 시간(분)'),
                                     color=alt.Color('Outbound_Flt_No', title='ICN 출발편명', legend=alt.Legend(orient='bottom')),
-                                    tooltip=[
-                                        alt.Tooltip('From', title='출발지'),
-                                        alt.Tooltip('Conn_Min', title='연결시간(분)'),
-                                        alt.Tooltip('Inbound_Flt_No', title='ICN 도착편명'),
-                                        alt.Tooltip('Outbound_Flt_No', title='ICN 출발편명'),
-                                        alt.Tooltip('Hub_Arr_Time', title='ICN 도착시간'),
-                                        alt.Tooltip('Hub_Dep_Time', title='ICN 출발시간')
-                                    ]
+                                    tooltip=['From', 'Conn_Min', 'Inbound_Flt_No', 'Outbound_Flt_No', 'Hub_Arr_Time', 'Hub_Dep_Time']
                                 ).properties(height=350, title="출발지별 연결 시간 분포").interactive()
-                                st.altair_chart(chart_in, use_container_width=True)
+                                st.altair_chart(base_chart, use_container_width=True)
                                 
+                                # Chart 2-2: Hub Time (Hour Scale)
                                 st.markdown("##### ⏱️ Hub 출/도착 시간 분포 (24h)")
                                 time_chart = alt.Chart(in_df).mark_circle(size=100).encode(
-                                    x=alt.X('Arr_Min', title='ICN 도착 시간 (분)', scale=alt.Scale(domain=[0, 1440])),
-                                    y=alt.Y('Dep_Min', title='ICN 출발 시간 (분)', scale=alt.Scale(domain=[0, 1440])),
+                                    x=alt.X('Arr_Hour', title='ICN 도착 시간 (시)', scale=alt.Scale(domain=[0, 24], nice=False)),
+                                    y=alt.Y('Dep_Hour', title='ICN 출발 시간 (시)', scale=alt.Scale(domain=[0, 24], nice=False)),
                                     color=alt.Color('Outbound_Flt_No', legend=None),
-                                    tooltip=['From', 'Inbound_Flt_No', 'Hub_Arr_Time', 'Outbound_Flt_No', 'Hub_Dep_Time', 'Conn_Min']
+                                    tooltip=[
+                                        alt.Tooltip('From', title='출발지'),
+                                        alt.Tooltip('Inbound_Flt_No', title='ICN 도착편명'),
+                                        alt.Tooltip('Hub_Arr_Time', title='ICN 도착시간'),
+                                        alt.Tooltip('Outbound_Flt_No', title='ICN 출발편명'),
+                                        alt.Tooltip('Hub_Dep_Time', title='ICN 출발시간'),
+                                        alt.Tooltip('Conn_Min', title='연결시간(분)')
+                                    ]
                                 ).properties(height=350).interactive()
                                 st.altair_chart(time_chart, use_container_width=True)
 
