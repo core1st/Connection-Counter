@@ -5,16 +5,15 @@ import altair as alt
 # 페이지 기본 설정
 st.set_page_config(page_title="항공편 연결 분석기 v18", layout="wide")
 
-st.title("✈️ 항공사 간 연결편(Interline) 분석 앱")
+st.title("✈️ 항공사 간 연결편 분석 앱")
 st.markdown("""
-**원하는 노선(Route)**을 선택하여 상호 간의 환승 연결성을 분석합니다.  
+**원하는 노선(Route)을 선택하여 상호 간의 환승 연결성을 분석합니다.  
 예: `미주` ↔ `동남아` 연결뿐만 아니라, `동남아` ↔ `동남아` 같은 **지역 내 연결**도 분석 가능합니다.
 """)
 
 # --- [NOTICE] 데이터 작성 가이드 ---
 with st.expander("📢 [필독] 데이터 파일(CSV) 작성 양식 가이드", expanded=False):
     st.markdown("""
-    **오류 해결: 이제 `DEST` 컬럼과 `DESTINATION` 컬럼 모두 호환됩니다.**
     
     ##### 1. 필수 컬럼
     * **SEASON**: 시즌 (예: S26)
